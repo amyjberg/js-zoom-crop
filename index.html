@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+
+  <head>
+    <meta charset="utf-8">
+    <title>zoom test</title>
+  </head>
+
+  <body id="body" style="background-color: black; display: flex; justify-content: space-around; overflow: hidden;">
+    <div id="container" style="margin: 0 auto; position: relative; border: 5px solid red; overflow: hidden;">
+        <img id="zoomable" src="https://pbs.twimg.com/profile_images/955460145814925312/hJG4yBSD_400x400.jpg" style="position: absolute;"/>
+    </div>
+
+    <script type="text/javascript">
+        const theImage = document.getElementById('zoomable');
+        const container = document.getElementById('container');
+
+        let panning = false;
+        let zooming = false;
+
+        let startX0;
+        let startY0
+        let startX1;
+        let startY1;
+
+        let endX0;
+        let endY0;
+        let endX1;
+        let endY1;
+
+        let startDistanceBetweenFingers;
+        let endDistanceBetweenFingers;
+        let pinchRatio;
+
+        let imgWidth = 400
+        let imgHeight = 400;
+
+        let currentContinuousZoom = 1.0; // start at 100% zoom
+
+        let currentOffsetX;
+        let currentOffsetY;
+        let currentWidth;
+        let currentHeight;
+
+        let newContinuousZoom;
+
+        let newHeight;
+        let newWidth;
+        let newOffsetX;
+        let newOffsetY;
+
+        let centerPointStartX;
+        let centerPointStartY;
+        let centerPointEndX;
+        let centerPointEndY;
+
+        let translateFromZoomingX;
+        let translateFromZoomingY;
+        let translateFromPanningX;
+        let translateFromPanningY;
+        let translateTotalX;
+        let translateTotalY;
+
+        let percentageOfImageAtPinchPointX;
+        let percentageOfImageAtPinchPointY;
+
+        let touchMoving = false;
+
+        let viewportWidth;
+        let viewportHeight;
+        let minimumWidth;
+        let minimumHeight;
+
+        function setDimensionsAndPosition() {
+            /* SET CONTAINER DIMENSIONS */
+            if (typeof window.innerWidth != 'undefined') { // the more standards compliant browsers (mozilla/netscape/opera/IE7) use window.innerWidth and window.innerHeight
+                viewportWidth = window.innerWidth,
+                viewportHeight = window.innerHeight
+            } else if (typeof document.documentElement != 'undefined' && typeof document.documentElement.clientWidth !='undefined' && document.documentElement.clientWidth != 0) { // IE6 in standards compliant mode (i.e. with a valid doctype as the first line in the document)
+                viewportWidth = document.documentElement.clientWidth,
+                viewportHeight = document.documentElement.clientHeight
+            } else { // older versions of IE
+                viewportWidth = document.getElementsByTagName('body')[0].clientWidth,
+                viewportHeight = document.getElementsByTagName('body')[0].clientHeight
+            }
+            container.style.width = viewportWidth + 'px';
+            container.style.height = viewportHeight + 'px';
+
+            /* SET IMAGE DIMENSIONS AND POSITION */
+            const containerAspectRatio = viewportWidth / viewportHeight;
+            const imageAspectRatio = theImage.width / theImage.height;
+            const imageTallerThanContainer = theImage.height > viewportHeight;
+            const imageWiderThanContainer = theImage.width > viewportWidth;
+
+            const centerOfContainer = [viewportWidth / 2, viewportHeight / 2];
+            let centerOfImage;
+            let valueToScaleBy;
+
+            if (imageTallerThanContainer && imageWiderThanContainer) {
+                valueToScaleBy = 1;
+
+            } else if (imageTallerThanContainer || imageAspectRatio / containerAspectRatio < 1) {
+                valueToScaleBy = viewportWidth / theImage.width
+
+            } else if (imageWiderThanContainer || imageAspectRatio / containerAspectRatio >= 1) {
+                valueToScaleBy = viewportHeight / theImage.height;
+            }
+
+            currentWidth = theImage.width * valueToScaleBy;
+            currentHeight = theImage.height * valueToScaleBy;
+            minimumWidth = currentWidth;
+            minimumHeight = currentHeight;
+            centerOfImage = [currentWidth / 2, currentHeight / 2];
+            // calculate translation to align center of image with center of container
+            currentOffsetX = centerOfContainer[0] - centerOfImage[0];
+            currentOffsetY = centerOfContainer[1] - centerOfImage[1];
+            // apply dimensions and position
+            theImage.style.width = currentWidth + 'px';
+            theImage.style.height = currentHeight + 'px';
+            theImage.style.left = currentOffsetX + 'px';
+            theImage.style.top = currentOffsetY + 'px';
+        }
+
+        function touchInBounds(touch) {
+            const domRect = container.getBoundingClientRect(); // DOMRect is relative to viewport, like clientX/clientY
+            const x = domRect.x;
+            const y = domRect.y;
+            const width = domRect.width;
+            const height = domRect.height;
+
+            return touch ? touch.clientX >= x && touch.clientX <= x + width && touch.clientY >= y && touch.clientY <= y + height : false;
+        }
+
+        function checkNewOffset() {
+            // make sure offest values do not expose edges of the image in the container
+            let updatedOffsetX = (currentWidth + newOffsetX < viewportWidth) ? viewportWidth - currentWidth : (newOffsetX > 0 ? 0 : newOffsetX);
+            let updatedOffsetY = (currentHeight + newOffsetY < viewportHeight) ? viewportHeight - currentHeight : (newOffsetY > 0 ? 0 : newOffsetY);
+            return [updatedOffsetX, updatedOffsetY];
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            theImage.height = imgHeight;
+            theImage.width = imgWidth;
+
+            // save viewport dimensions, set container and image dimensions/position
+            setDimensionsAndPosition();
+
+            theImage.addEventListener('touchstart', onTouchStart);
+            theImage.addEventListener('touchmove', onTouchMove);
+            theImage.addEventListener('touchend', onTouchEnd);
+            theImage.addEventListener('touchcancel', onTouchCancel);
+            
+            window.addEventListener("resize", function() {
+                console.log('how to preserve center? this callback just resets everything to center...');
+                setDimensionsAndPosition();
+            });
+        })
+
+        const onTouchStart = (e) => {
+            e.preventDefault();
+            touchMoving = false;
+            panning = false;
+            zooming = false;
+
+            if (e.touches.length === 1) {
+                panning = true;
+
+                startX0 = e.touches[0].pageX;
+                startY0 = e.touches[0].pageY;
+            } else if (e.touches.length === 2) {
+                zooming = true;
+
+                startX0 = e.touches[0].pageX;
+                startY0 = e.touches[0].pageY;
+                startX1 = e.touches[1].pageX;
+                startY1 = e.touches[1].pageY;
+
+                centerPointStartX = (startX0 + startX1) / 2;
+                centerPointStartY = (startY0 + startY1) / 2;
+                // calculate center point x and y coordinates in terms of percentage of image height and width
+                percentageOfImageAtPinchPointX = (centerPointStartX - currentOffsetX) / currentWidth;
+                percentageOfImageAtPinchPointY = (centerPointStartY - currentOffsetY) / currentHeight;
+                startDistanceBetweenFingers = Math.sqrt(Math.pow(startX0 - startX1, 2) + Math.pow(startY0 - startY1, 2));
+            }
+        }
+
+        const onTouchMove = (e) => {
+            e.preventDefault(); // touch move event does other weird things in mobile browser
+            touchMoving = true;
+
+            if (panning && touchInBounds(e.touches[0])) {
+                endX0 = e.touches[0].pageX;
+                endY0 = e.touches[0].pageY;
+                // translate start point to end point
+                translateFromPanningX = endX0 - startX0;
+                translateFromPanningY = endY0 - startY0;
+                // use translation to get new offset
+                newOffsetX = currentOffsetX + translateFromPanningX;
+                newOffsetY = currentOffsetY + translateFromPanningY;
+
+                // make sure new offsets are in bounds
+                [newOffsetX, newOffsetY] = checkNewOffset();
+                
+                theImage.style.left = newOffsetX + 'px';
+                theImage.style.top = newOffsetY + 'px';
+
+            } else if (zooming && touchInBounds(e.touches[0]) && touchInBounds(e.touches[1])) {
+                endX0 = e.touches[0].pageX;
+                endY0 = e.touches[0].pageY;
+                endX1 = e.touches[1].pageX;
+                endY1 = e.touches[1].pageY;
+
+                centerPointEndX = (endX0 + endX1) / 2;
+                centerPointEndY = (endY0 + endY1) / 2;
+
+                endDistanceBetweenFingers = Math.sqrt(Math.pow(endX0 - endX1, 2) + Math.pow(endY0 - endY1, 2));
+                pinchRatio = endDistanceBetweenFingers / startDistanceBetweenFingers;
+                newContinuousZoom = pinchRatio * currentContinuousZoom < 1 ? 1 : pinchRatio * currentContinuousZoom; // can't shrink image smaller than original
+
+                newWidth = newContinuousZoom * minimumWidth;
+                newHeight = newContinuousZoom * minimumHeight;
+
+                // translate with zoom
+                translateFromZoomingX = (currentWidth - newWidth) * percentageOfImageAtPinchPointX;
+                translateFromZoomingY = (currentHeight - newHeight) * percentageOfImageAtPinchPointY;
+                // linear translation
+                translateFromPanningX = centerPointEndX - centerPointStartX;
+                translateFromPanningY = centerPointEndY - centerPointStartY;
+                // combine translations
+                translateTotalX = translateFromZoomingX + translateFromPanningX;
+                translateTotalY = translateFromZoomingY + translateFromPanningY;
+
+                newOffsetX = currentOffsetX + translateTotalX;
+                newOffsetY = currentOffsetY + translateTotalY;
+
+                // make sure new offsets are in bounds
+                [newOffsetX, newOffsetY] = checkNewOffset();
+
+                theImage.style.left = newOffsetX + 'px';
+                theImage.style.top = newOffsetY + 'px';
+                theImage.style.width = newWidth + 'px';
+                theImage.style.height = newHeight + 'px';
+            }
+        }
+
+        const onTouchEnd = (e) => {
+            e.preventDefault();
+            if (!touchMoving) {
+                return;
+            }
+            touchMoving = false;
+
+            if (panning) {
+                panning = false;
+                currentOffsetX = newOffsetX;
+                currentOffsetY = newOffsetY;
+
+            } else if (zooming) {
+                zooming = false;
+                currentWidth = newWidth;
+                currentHeight = newHeight;
+                [newOffsetX, newOffsetY] = checkNewOffset();
+                currentOffsetX = newOffsetX;
+                currentOffsetY = newOffsetY;
+                currentContinuousZoom = newContinuousZoom;
+                // reapply styles in case checkNewOffset() updated our offset values
+                theImage.style.left = currentOffsetX + 'px';
+                theImage.style.top = currentOffsetY + 'px';
+                theImage.style.width = currentWidth + 'px';
+                theImage.style.height = currentHeight + 'px';
+            }
+
+            const centerOfContainer = [viewportWidth / 2, viewportHeight / 2]; // based on pixel dimensions of container
+            const centerTranslatedToPicture = [centerOfContainer[0] - currentOffsetX, centerOfContainer[1] - currentOffsetY]; // coordinate of same point relative to entire image
+            const focusPointOfPicture = [centerTranslatedToPicture[0] / currentWidth, centerTranslatedToPicture[1] / currentHeight]; // convert pixel coordinate to percent (between 0 and 1)
+
+            console.log('center of region of interest in percentage', `${focusPointOfPicture[0] * 100}% over and ${focusPointOfPicture[1] * 100}% down`);
+        }
+
+        const onTouchCancel = (e) => {
+            panning = false;
+            zooming = false;
+        }
+
+    </script>
+  </body>
+
+</html>
