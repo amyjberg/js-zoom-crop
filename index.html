@@ -36,6 +36,7 @@
         let imgHeight = 400;
 
         let currentContinuousZoom = 1.0; // start at 100% zoom
+        let zoomThreshold; // gets set in function
 
         let currentOffsetX;
         let currentOffsetY;
@@ -72,6 +73,7 @@
         let minimumHeight;
 
         function getMinimumDimensionsForImage(containerAspectRatio, imageAspectRatio) {
+            // set threshold zoom
             const imageTallEnough = imgHeight >= viewportHeight;
             const imageWideEnough = imgWidth >= viewportWidth;
             let scale;
@@ -85,7 +87,7 @@
             return [ imgWidth * scale, imgHeight * scale ];
         }
 
-        function setDimensionsAndPosition([ centerX, centerY ], zoom, baselineHeight, baselineWidth) {
+        function setDimensionsAndPosition([ centerX, centerY ], zoom) {
             /* SET CONTAINER DIMENSIONS */
             if (typeof window.innerWidth != 'undefined') { // the more standards compliant browsers (mozilla/netscape/opera/IE7) use window.innerWidth and window.innerHeight
                 viewportWidth = window.innerWidth,
@@ -101,8 +103,8 @@
             container.style.height = viewportHeight + 'px';
 
             /* SET IMAGE DIMENSIONS AND POSITION */
-            const width = baselineWidth * zoom;
-            const height = baselineHeight * zoom;
+            const width = imgWidth * zoom;
+            const height = imgHeight * zoom;
 
             const containerAspectRatio = viewportWidth / viewportHeight;
             const imageAspectRatio = width / height;
@@ -131,7 +133,16 @@
             currentWidth = width * scale;
             currentHeight = height * scale;
             [ minimumWidth, minimumHeight ] = getMinimumDimensionsForImage(containerAspectRatio, imageAspectRatio);
-            currentContinuousZoom = currentHeight / minimumHeight; // calculate zoom from minimum dimensions
+
+            const oldZoomThreshold = zoomThreshold;
+            zoomThreshold = minimumHeight / imgHeight; // set zoom threshold
+            // // need to adjust zoom for switching to landscape -- awkward atm
+            // if newZoomThreshold is smaller, we want to scale continuousZoom down by that ammount?
+            // if newZoomThreshold is bigger, we want to scale continuousZoom up by that ammount?
+            // const zoomScale = oldZoomThreshold ? zoomThreshold / oldZoomThreshold : 1;
+            // console.log('zoomscale:', zoomScale);
+            currentContinuousZoom = currentHeight / imgHeight; // calculate zoom from imgHeight
+            // is anything happening with the new zoom?
 
             // convert percentage to pixels
             const centerOfImage = [ percentageX * currentWidth, percentageY * currentWidth ];
@@ -168,7 +179,7 @@
 
             // save viewport dimensions, set container and image dimensions/position
             // center image with zoom = 1 based on original image width and height
-            setDimensionsAndPosition([50, 50], 1, imgWidth, imgHeight);
+            setDimensionsAndPosition([50, 50], 1);
 
             theImage.addEventListener('touchstart', onTouchStart);
             theImage.addEventListener('touchmove', onTouchMove);
@@ -180,7 +191,7 @@
                 const viewportCenterY = viewportHeight / 2;
                 const currentCenterX = (viewportCenterX - currentOffsetX) / currentWidth * 100;
                 const currentCenterY = (viewportCenterY - currentOffsetY) / currentHeight * 100;
-                setDimensionsAndPosition([ currentCenterX, currentCenterY ], currentContinuousZoom, minimumWidth, minimumHeight);
+                setDimensionsAndPosition([ currentCenterX, currentCenterY ], currentContinuousZoom);
             });
         })
 
@@ -243,10 +254,10 @@
 
                 endDistanceBetweenFingers = Math.sqrt(Math.pow(endX0 - endX1, 2) + Math.pow(endY0 - endY1, 2));
                 pinchRatio = endDistanceBetweenFingers / startDistanceBetweenFingers;
-                newContinuousZoom = pinchRatio * currentContinuousZoom < 1 ? 1 : pinchRatio * currentContinuousZoom; // zoom can't be < 1
+                newContinuousZoom = pinchRatio * currentContinuousZoom < zoomThreshold ? zoomThreshold : pinchRatio * currentContinuousZoom; // zoom can't be < threshold
 
-                newWidth = newContinuousZoom * minimumWidth;
-                newHeight = newContinuousZoom * minimumHeight;
+                newWidth = newContinuousZoom * imgWidth; // zoom is with respect to original image width/height
+                newHeight = newContinuousZoom * imgHeight;
 
                 // translate with zoom
                 translateFromZoomingX = (currentWidth - newWidth) * percentageOfImageAtPinchPointX;
@@ -262,7 +273,7 @@
                 newOffsetY = currentOffsetY + translateTotalY;
 
                 // make sure new offsets are in bounds
-                [newOffsetX, newOffsetY] = checkNewOffset();
+                [ newOffsetX, newOffsetY ] = checkNewOffset();
 
                 theImage.style.left = newOffsetX + 'px';
                 theImage.style.top = newOffsetY + 'px';
@@ -299,8 +310,8 @@
             }
 
             const centerOfContainer = [viewportWidth / 2, viewportHeight / 2]; // based on pixel dimensions of container
-            const centerTranslatedToPicture = [centerOfContainer[0] - currentOffsetX, centerOfContainer[1] - currentOffsetY]; // coordinate of same point relative to entire image
-            const focusPointOfPicture = [centerTranslatedToPicture[0] / currentWidth, centerTranslatedToPicture[1] / currentHeight]; // convert pixel coordinate to percent (between 0 and 1)
+            const centerTranslatedToPicture = [ centerOfContainer[0] - currentOffsetX, centerOfContainer[1] - currentOffsetY ]; // coordinate of same point relative to entire image
+            const focusPointOfPicture = [ centerTranslatedToPicture[0] / currentWidth, centerTranslatedToPicture[1] / currentHeight ]; // convert pixel coordinate to percent (between 0 and 1)
 
             console.log('center of region of interest in percentage', `${focusPointOfPicture[0] * 100}% over and ${focusPointOfPicture[1] * 100}% down`);
         }
