@@ -14,6 +14,8 @@
     <script type="text/javascript">
         const theImage = document.getElementById('zoomable');
         const container = document.getElementById('container');
+        let imgWidth = 400
+        let imgHeight = 400;
 
         let panning = false;
         let zooming = false;
@@ -32,18 +34,14 @@
         let endDistanceBetweenFingers;
         let pinchRatio;
 
-        let imgWidth = 400
-        let imgHeight = 400;
-
         let currentContinuousZoom = 1.0; // start at 100% zoom
-        let zoomThreshold; // gets set in function
+        let zoomThreshold;
+        let newContinuousZoom;
 
         let currentOffsetX;
         let currentOffsetY;
         let currentWidth;
         let currentHeight;
-
-        let newContinuousZoom;
 
         let newHeight;
         let newWidth;
@@ -72,69 +70,85 @@
         let minimumWidth;
         let minimumHeight;
 
-        function getMinimumDimensionsForImage(containerAspectRatio, imageAspectRatio) {
-            // set threshold zoom
-            const imageTallEnough = imgHeight >= viewportHeight;
-            const imageWideEnough = imgWidth >= viewportWidth;
-            let scale;
-            if (imageTallEnough && imageWidEnough) {
-                scale = 1;
-            } else if (imageTallEnough || imageAspectRatio / containerAspectRatio < 1) {
-                scale = viewportWidth / imgWidth
-            } else if (imageWideEnough || imageAspectRatio / containerAspectRatio >= 1) {
-                scale = viewportHeight / imgHeight;
+        const getViewportDimensions = () => {
+            let w, h;
+            if (typeof window.innerWidth != 'undefined') { // the more standards compliant browsers (mozilla/netscape/opera/IE7) use window.innerWidth and window.innerHeight
+                w = window.innerWidth,
+                h = window.innerHeight
+            } else if (typeof document.documentElement != 'undefined' && typeof document.documentElement.clientWidth !='undefined' && document.documentElement.clientWidth != 0) { // IE6 in standards compliant mode (i.e. with a valid doctype as the first line in the document)
+                w = document.documentElement.clientWidth,
+                h = document.documentElement.clientHeight
+            } else { // older versions of IE
+                w = document.getElementsByTagName('body')[0].clientWidth,
+                h = document.getElementsByTagName('body')[0].clientHeight
             }
-            return [ imgWidth * scale, imgHeight * scale ];
+            return [w, h];
         }
 
-        function setDimensionsAndPosition([ centerX, centerY ], zoom) {
-            /* SET CONTAINER DIMENSIONS */
-            if (typeof window.innerWidth != 'undefined') { // the more standards compliant browsers (mozilla/netscape/opera/IE7) use window.innerWidth and window.innerHeight
-                viewportWidth = window.innerWidth,
-                viewportHeight = window.innerHeight
-            } else if (typeof document.documentElement != 'undefined' && typeof document.documentElement.clientWidth !='undefined' && document.documentElement.clientWidth != 0) { // IE6 in standards compliant mode (i.e. with a valid doctype as the first line in the document)
-                viewportWidth = document.documentElement.clientWidth,
-                viewportHeight = document.documentElement.clientHeight
-            } else { // older versions of IE
-                viewportWidth = document.getElementsByTagName('body')[0].clientWidth,
-                viewportHeight = document.getElementsByTagName('body')[0].clientHeight
+        const getScaleForResizingImage = (containerAspectRatio, imageAspectRatio, width, height) => {
+            const tallEnough = height >= viewportHeight;
+            const wideEnough = width >= viewportWidth;
+            if (tallEnough && wideEnough) {
+                return 1;
+            } else if (tallEnough) {
+                return viewportWidth / width;
+            } else if (wideEnough) {
+                return viewportHeight / height;
+            // else image is not tall enough AND not wide enough
+            } else if (imageAspectRatio / containerAspectRatio < 1) {
+                return viewportWidth / width;
+            } else if (containerAspectRatio / imageAspectRatio < 1) {
+                return viewportHeight / height;
             }
+            console.log('did not get a scale...hmm...');
+            
+        }
+
+        const  checkNewOffset = () => {
+            // make sure offest values do not expose edges of the image in the container
+            let updatedOffsetX = (currentWidth + newOffsetX < viewportWidth) ? viewportWidth - currentWidth : (newOffsetX > 0 ? 0 : newOffsetX);
+            let updatedOffsetY = (currentHeight + newOffsetY < viewportHeight) ? viewportHeight - currentHeight : (newOffsetY > 0 ? 0 : newOffsetY);
+            return [updatedOffsetX, updatedOffsetY];
+        }
+
+        const touchInBounds = (touch) => {
+            const domRect = container.getBoundingClientRect(); // DOMRect is relative to viewport, like clientX/clientY
+            const x = domRect.x;
+            const y = domRect.y;
+            const width = domRect.width;
+            const height = domRect.height;
+
+            return touch ? touch.clientX >= x && touch.clientX <= x + width && touch.clientY >= y && touch.clientY <= y + height : false;
+        }
+
+        const setDimensionsAndPosition = ([ centerX, centerY ], zoom) => {
+        /* SET CONTAINER DIMENSIONS */
+            [ viewportWidth, viewportHeight ] = getViewportDimensions();
             container.style.width = viewportWidth + 'px';
             container.style.height = viewportHeight + 'px';
-
-            /* SET IMAGE DIMENSIONS AND POSITION */
+            
+        /* SET IMAGE DIMENSIONS AND POSITION */
             const width = imgWidth * zoom;
             const height = imgHeight * zoom;
-
+            
             const containerAspectRatio = viewportWidth / viewportHeight;
             const imageAspectRatio = width / height;
+
             const percentageX = centerX / 100;
             const percentageY = centerY / 100;
-            const croppedImageTallEnough = height * percentageY * 2 >= viewportHeight;
-            const croppedImageWideEnough = width * percentageX * 2 >= viewportWidth;
+            
+            const currentCroppedWidth = width * percentageX * 2;
+            const currentCroppedHeight = height * percentageY * 2;
 
-            const centerOfContainer = [ viewportWidth / 2, viewportHeight / 2 ];
-            let scale;
-
-            if (croppedImageTallEnough && croppedImageWideEnough) {
-                scale = 1;
-            } else if (croppedImageTallEnough) {
-                scale = viewportWidth / (width * percentageX * 2);
-            } else if (croppedImageWideEnough) {
-                scale = viewportHeight / (height * percentageY * 2);
-            } else { // image is too small in both dimensions
-                if (imageAspectRatio / containerAspectRatio < 1) {
-                    scale = viewportWidth / (width * percentageX * 2);
-                } else if ( imageAspectRatio / containerAspectRatio >= 1) {
-                    scale = viewportHeight / (height * percentageY * 2);
-                }
-            }
-
+            const scale = getScaleForResizingImage(containerAspectRatio, imageAspectRatio, currentCroppedWidth, currentCroppedHeight)
             currentWidth = width * scale;
             currentHeight = height * scale;
-            [ minimumWidth, minimumHeight ] = getMinimumDimensionsForImage(containerAspectRatio, imageAspectRatio);
 
-            const oldZoomThreshold = zoomThreshold;
+            const scaleForMinimumDimensions = getScaleForResizingImage(containerAspectRatio, imageAspectRatio, imgWidth, imgHeight)
+            minimumWidth = imgWidth * scaleForMinimumDimensions;
+            minimumHeight = imgHeight * scaleForMinimumDimensions;
+
+            // const oldZoomThreshold = zoomThreshold;
             zoomThreshold = minimumHeight / imgHeight; // set zoom threshold
             // // need to adjust zoom for switching to landscape -- awkward atm
             // if newZoomThreshold is smaller, we want to scale continuousZoom down by that ammount?
@@ -144,8 +158,8 @@
             currentContinuousZoom = currentHeight / imgHeight; // calculate zoom from imgHeight
             // is anything happening with the new zoom?
 
-            // convert percentage to pixels
-            const centerOfImage = [ percentageX * currentWidth, percentageY * currentWidth ];
+            const centerOfContainer = [ viewportWidth / 2, viewportHeight / 2 ]; // in pixels
+            const centerOfImage = [ percentageX * currentWidth, percentageY * currentWidth ]; // convert to pixels
             currentOffsetX = centerOfContainer[0] - centerOfImage[0];
             currentOffsetY = centerOfContainer[1] - centerOfImage[1];
 
@@ -156,29 +170,10 @@
             theImage.style.top = currentOffsetY + 'px';
         }
 
-        function touchInBounds(touch) {
-            const domRect = container.getBoundingClientRect(); // DOMRect is relative to viewport, like clientX/clientY
-            const x = domRect.x;
-            const y = domRect.y;
-            const width = domRect.width;
-            const height = domRect.height;
-
-            return touch ? touch.clientX >= x && touch.clientX <= x + width && touch.clientY >= y && touch.clientY <= y + height : false;
-        }
-
-        function checkNewOffset() {
-            // make sure offest values do not expose edges of the image in the container
-            let updatedOffsetX = (currentWidth + newOffsetX < viewportWidth) ? viewportWidth - currentWidth : (newOffsetX > 0 ? 0 : newOffsetX);
-            let updatedOffsetY = (currentHeight + newOffsetY < viewportHeight) ? viewportHeight - currentHeight : (newOffsetY > 0 ? 0 : newOffsetY);
-            return [updatedOffsetX, updatedOffsetY];
-        }
-
         document.addEventListener('DOMContentLoaded', () => {
             theImage.height = imgHeight;
             theImage.width = imgWidth;
 
-            // save viewport dimensions, set container and image dimensions/position
-            // center image with zoom = 1 based on original image width and height
             setDimensionsAndPosition([50, 50], 1);
 
             theImage.addEventListener('touchstart', onTouchStart);
