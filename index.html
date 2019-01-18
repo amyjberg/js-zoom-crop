@@ -85,7 +85,7 @@
             return [ theImage.width * valueToScaleBy, theImage.height * valueToScaleBy ];
         }
 
-        function setDimensionsAndPosition(center, zoom) {
+        function setDimensionsAndPosition(center, zoom, baselineHeight, baselineWidth) {
             /* SET CONTAINER DIMENSIONS */
             if (typeof window.innerWidth != 'undefined') { // the more standards compliant browsers (mozilla/netscape/opera/IE7) use window.innerWidth and window.innerHeight
                 viewportWidth = window.innerWidth,
@@ -101,14 +101,14 @@
             container.style.height = viewportHeight + 'px';
 
             /* SET IMAGE DIMENSIONS AND POSITION */
-            const height = theImage.height * zoom;
-            const width = theImage.width * zoom;
+            const height = baselineHeight * zoom;
+            const width = baselineWidth * zoom;
 
             const containerAspectRatio = viewportWidth / viewportHeight;
             const imageAspectRatio = width / height;
             const percentageX = center[0] / 100;
             const percentageY = center[1] / 100;
-            const croppedImageTallerThanContainer = height * percentageY * 2 > viewportHeight; // trying to factor in the center point
+            const croppedImageTallerThanContainer = height * percentageY * 2 > viewportHeight;
             const croppedImageWiderThanContainer = width * percentageX * 2 > viewportWidth;
 
             const centerOfContainer = [viewportWidth / 2, viewportHeight / 2];
@@ -131,7 +131,6 @@
             currentWidth = width * valueToScaleBy;
             currentHeight = height * valueToScaleBy;
             [ minimumWidth, minimumHeight ] = getMinimumDimensionsForImage(containerAspectRatio, imageAspectRatio);
-            // doesn't matter if you use height or width to get zoom
             currentContinuousZoom = currentHeight / minimumHeight;
 
             // must convert from percentage to pixels
@@ -168,7 +167,7 @@
             theImage.width = imgWidth;
 
             // save viewport dimensions, set container and image dimensions/position
-            setDimensionsAndPosition([50, 50], 1);
+            setDimensionsAndPosition([50, 50], 1, imgWidth, imgHeight);
 
             theImage.addEventListener('touchstart', onTouchStart);
             theImage.addEventListener('touchmove', onTouchMove);
@@ -180,7 +179,7 @@
                 const viewportCenterY = viewportHeight / 2;
                 const currentCenterX = (viewportCenterX - currentOffsetX) / currentWidth * 100;
                 const currentCenterY = (viewportCenterY - currentOffsetY) / currentHeight * 100;
-                setDimensionsAndPosition([ currentCenterX, currentCenterY ], 1);
+                setDimensionsAndPosition([ currentCenterX, currentCenterY ], currentContinuousZoom, minimumWidth, minimumHeight);
             });
         })
 
@@ -243,7 +242,7 @@
 
                 endDistanceBetweenFingers = Math.sqrt(Math.pow(endX0 - endX1, 2) + Math.pow(endY0 - endY1, 2));
                 pinchRatio = endDistanceBetweenFingers / startDistanceBetweenFingers;
-                newContinuousZoom = pinchRatio * currentContinuousZoom < 1 ? 1 : pinchRatio * currentContinuousZoom; // can't shrink image smaller than original
+                newContinuousZoom = pinchRatio * currentContinuousZoom < 1 ? 1 : pinchRatio * currentContinuousZoom; // zoom can't be < 1
 
                 newWidth = newContinuousZoom * minimumWidth;
                 newHeight = newContinuousZoom * minimumHeight;
