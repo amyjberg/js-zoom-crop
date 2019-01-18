@@ -12,8 +12,8 @@
     </div>
 
     <script type="text/javascript">
-        const theImage = document.getElementById('zoomable');
         const container = document.getElementById('container');
+        const theImage = document.getElementById('zoomable');
         let imgWidth = 400
         let imgHeight = 400;
 
@@ -34,9 +34,9 @@
         let endDistanceBetweenFingers;
         let pinchRatio;
 
-        let currentContinuousZoom = 1.0; // start at 100% zoom
+        let currentZoom = 1.0; // start at 100% zoom
         let zoomThreshold;
-        let newContinuousZoom;
+        let newZoom;
 
         let currentOffsetX;
         let currentOffsetY;
@@ -104,11 +104,11 @@
             
         }
 
-        const  checkNewOffset = () => {
+        const updateOffsets = (offsetX, offsetY) => {
             // make sure offest values do not expose edges of the image in the container
-            let updatedOffsetX = (currentWidth + newOffsetX < viewportWidth) ? viewportWidth - currentWidth : (newOffsetX > 0 ? 0 : newOffsetX);
-            let updatedOffsetY = (currentHeight + newOffsetY < viewportHeight) ? viewportHeight - currentHeight : (newOffsetY > 0 ? 0 : newOffsetY);
-            return [updatedOffsetX, updatedOffsetY];
+            let updatedOffsetX = (currentWidth + offsetX < viewportWidth) ? viewportWidth - currentWidth : (offsetX > 0 ? 0 : offsetX);
+            let updatedOffsetY = (currentHeight + offsetY < viewportHeight) ? viewportHeight - currentHeight : (offsetY > 0 ? 0 : offsetY);
+            return [ updatedOffsetX, updatedOffsetY ];
         }
 
         const touchInBounds = (touch) => {
@@ -149,13 +149,12 @@
             minimumHeight = imgHeight * scaleForMinimumDimensions;
 
             // const oldZoomThreshold = zoomThreshold;
-            zoomThreshold = minimumHeight / imgHeight; // set zoom threshold
+            zoomThreshold = minimumHeight / imgHeight;
             // // need to adjust zoom for switching to landscape -- awkward atm
-            // if newZoomThreshold is smaller, we want to scale continuousZoom down by that ammount?
-            // if newZoomThreshold is bigger, we want to scale continuousZoom up by that ammount?
+            // if newZoomThreshold is smaller, we want to scale Zoom down by that ammount?
+            // if newZoomThreshold is bigger, we want to scale Zoom up by that ammount?
             // const zoomScale = oldZoomThreshold ? zoomThreshold / oldZoomThreshold : 1;
-            // console.log('zoomscale:', zoomScale);
-            currentContinuousZoom = currentHeight / imgHeight; // calculate zoom from imgHeight
+            currentZoom = currentHeight / imgHeight; // calculate zoom from imgHeight
             // is anything happening with the new zoom?
 
             const centerOfContainer = [ viewportWidth / 2, viewportHeight / 2 ]; // in pixels
@@ -186,7 +185,7 @@
                 const viewportCenterY = viewportHeight / 2;
                 const currentCenterX = (viewportCenterX - currentOffsetX) / currentWidth * 100;
                 const currentCenterY = (viewportCenterY - currentOffsetY) / currentHeight * 100;
-                setDimensionsAndPosition([ currentCenterX, currentCenterY ], currentContinuousZoom);
+                setDimensionsAndPosition([ currentCenterX, currentCenterY ], currentZoom);
             });
         })
 
@@ -233,7 +232,7 @@
                 newOffsetY = currentOffsetY + translateFromPanningY;
 
                 // make sure new offsets are in bounds
-                [newOffsetX, newOffsetY] = checkNewOffset();
+                [ newOffsetX, newOffsetY ] = updateOffsets(newOffsetX, newOffsetY);
                 
                 theImage.style.left = newOffsetX + 'px';
                 theImage.style.top = newOffsetY + 'px';
@@ -249,10 +248,10 @@
 
                 endDistanceBetweenFingers = Math.sqrt(Math.pow(endX0 - endX1, 2) + Math.pow(endY0 - endY1, 2));
                 pinchRatio = endDistanceBetweenFingers / startDistanceBetweenFingers;
-                newContinuousZoom = pinchRatio * currentContinuousZoom < zoomThreshold ? zoomThreshold : pinchRatio * currentContinuousZoom; // zoom can't be < threshold
+                newZoom = pinchRatio * currentZoom < zoomThreshold ? zoomThreshold : pinchRatio * currentZoom; // zoom can't be < threshold
 
-                newWidth = newContinuousZoom * imgWidth; // zoom is with respect to original image width/height
-                newHeight = newContinuousZoom * imgHeight;
+                newWidth = newZoom * imgWidth; // zoom is with respect to original image width/height
+                newHeight = newZoom * imgHeight;
 
                 // translate with zoom
                 translateFromZoomingX = (currentWidth - newWidth) * percentageOfImageAtPinchPointX;
@@ -268,7 +267,7 @@
                 newOffsetY = currentOffsetY + translateTotalY;
 
                 // make sure new offsets are in bounds
-                [ newOffsetX, newOffsetY ] = checkNewOffset();
+                [ newOffsetX, newOffsetY ] = updateOffsets(newOffsetX, newOffsetY);
 
                 theImage.style.left = newOffsetX + 'px';
                 theImage.style.top = newOffsetY + 'px';
@@ -293,20 +292,20 @@
                 zooming = false;
                 currentWidth = newWidth;
                 currentHeight = newHeight;
-                [newOffsetX, newOffsetY] = checkNewOffset();
+                [ newOffsetX, newOffsetY ] = updateOffsets(newOffsetX, newOffsetY);
                 currentOffsetX = newOffsetX;
                 currentOffsetY = newOffsetY;
-                currentContinuousZoom = newContinuousZoom;
-                // reapply styles in case checkNewOffset() updated our offset values
+                currentZoom = newZoom;
+                // reapply styles in case updateOffsets() updated our offset values
                 theImage.style.left = currentOffsetX + 'px';
                 theImage.style.top = currentOffsetY + 'px';
                 theImage.style.width = currentWidth + 'px';
                 theImage.style.height = currentHeight + 'px';
             }
 
-            const centerOfContainer = [viewportWidth / 2, viewportHeight / 2]; // based on pixel dimensions of container
-            const centerTranslatedToPicture = [ centerOfContainer[0] - currentOffsetX, centerOfContainer[1] - currentOffsetY ]; // coordinate of same point relative to entire image
-            const focusPointOfPicture = [ centerTranslatedToPicture[0] / currentWidth, centerTranslatedToPicture[1] / currentHeight ]; // convert pixel coordinate to percent (between 0 and 1)
+            const centerOfContainer = [ viewportWidth / 2, viewportHeight / 2 ]; // based on pixel dimensions of container
+            const centerOfContainerOnImage = [ centerOfContainer[0] - currentOffsetX, centerOfContainer[1] - currentOffsetY ]; // coordinate of same point relative to entire image
+            const focusPointOfPicture = [ centerOfContainerOnImage[0] / currentWidth, centerOfContainerOnImage[1] / currentHeight ]; // convert pixel coordinate to percent (between 0 and 1)
 
             console.log('center of region of interest in percentage', `${focusPointOfPicture[0] * 100}% over and ${focusPointOfPicture[1] * 100}% down`);
         }
