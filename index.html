@@ -71,7 +71,21 @@
         let minimumWidth;
         let minimumHeight;
 
-        function setDimensionsAndPosition() {
+        function getMinimumDimensionsForImage(containerAspectRatio, imageAspectRatio) {
+            const imageTallerThanContainer = imgHeight> viewportHeight; // use imgHeight and imgWidth because they are original image dimensions
+            const imageWiderThanContainer = imgWidth > viewportWidth;
+            let valueToScaleBy;
+            if (imageTallerThanContainer && imageWiderThanContainer) {
+                valueToScaleBy = 1;
+            } else if (imageTallerThanContainer || imageAspectRatio / containerAspectRatio < 1) {
+                valueToScaleBy = viewportWidth / theImage.width
+            } else if (imageWiderThanContainer || imageAspectRatio / containerAspectRatio >= 1) {
+                valueToScaleBy = viewportHeight / theImage.height;
+            }
+            return [ theImage.width * valueToScaleBy, theImage.height * valueToScaleBy ];
+        }
+
+        function setDimensionsAndPosition(center, zoom) {
             /* SET CONTAINER DIMENSIONS */
             if (typeof window.innerWidth != 'undefined') { // the more standards compliant browsers (mozilla/netscape/opera/IE7) use window.innerWidth and window.innerHeight
                 viewportWidth = window.innerWidth,
@@ -87,33 +101,44 @@
             container.style.height = viewportHeight + 'px';
 
             /* SET IMAGE DIMENSIONS AND POSITION */
+            const height = theImage.height * zoom;
+            const width = theImage.width * zoom;
+
             const containerAspectRatio = viewportWidth / viewportHeight;
-            const imageAspectRatio = theImage.width / theImage.height;
-            const imageTallerThanContainer = theImage.height > viewportHeight;
-            const imageWiderThanContainer = theImage.width > viewportWidth;
+            const imageAspectRatio = width / height;
+            const percentageX = center[0] / 100;
+            const percentageY = center[1] / 100;
+            const croppedImageTallerThanContainer = height * percentageY * 2 > viewportHeight; // trying to factor in the center point
+            const croppedImageWiderThanContainer = width * percentageX * 2 > viewportWidth;
 
             const centerOfContainer = [viewportWidth / 2, viewportHeight / 2];
-            let centerOfImage;
             let valueToScaleBy;
 
-            if (imageTallerThanContainer && imageWiderThanContainer) {
+            if (croppedImageTallerThanContainer && croppedImageWiderThanContainer) {
                 valueToScaleBy = 1;
-
-            } else if (imageTallerThanContainer || imageAspectRatio / containerAspectRatio < 1) {
-                valueToScaleBy = viewportWidth / theImage.width
-
-            } else if (imageWiderThanContainer || imageAspectRatio / containerAspectRatio >= 1) {
-                valueToScaleBy = viewportHeight / theImage.height;
+            } else if (croppedImageTallerThanContainer) {
+                valueToScaleBy = viewportWidth / (width * percentageX * 2);
+            } else if (croppedImageWiderThanContainer) {
+                valueToScaleBy = viewportHeight / (height * percentageY * 2);
+            } else { // image is too small in both dimensions
+                if (imageAspectRatio / containerAspectRatio < 1) {
+                    valueToScaleBy = viewportWidth / (width * percentageX * 2);
+                } else if ( imageAspectRatio / containerAspectRatio >= 1) {
+                    valueToScaleBy = viewportHeight / (height * percentageY * 2);
+                }
             }
 
-            currentWidth = theImage.width * valueToScaleBy;
-            currentHeight = theImage.height * valueToScaleBy;
-            minimumWidth = currentWidth;
-            minimumHeight = currentHeight;
-            centerOfImage = [currentWidth / 2, currentHeight / 2];
-            // calculate translation to align center of image with center of container
+            currentWidth = width * valueToScaleBy;
+            currentHeight = height * valueToScaleBy;
+            [ minimumWidth, minimumHeight ] = getMinimumDimensionsForImage(containerAspectRatio, imageAspectRatio);
+            // doesn't matter if you use height or width to get zoom
+            currentContinuousZoom = currentHeight / minimumHeight;
+
+            // must convert from percentage to pixels
+            const centerOfImage = [percentageX * currentWidth, percentageY * currentWidth];
             currentOffsetX = centerOfContainer[0] - centerOfImage[0];
             currentOffsetY = centerOfContainer[1] - centerOfImage[1];
+
             // apply dimensions and position
             theImage.style.width = currentWidth + 'px';
             theImage.style.height = currentHeight + 'px';
@@ -143,7 +168,7 @@
             theImage.width = imgWidth;
 
             // save viewport dimensions, set container and image dimensions/position
-            setDimensionsAndPosition();
+            setDimensionsAndPosition([50, 50], 1);
 
             theImage.addEventListener('touchstart', onTouchStart);
             theImage.addEventListener('touchmove', onTouchMove);
@@ -151,8 +176,11 @@
             theImage.addEventListener('touchcancel', onTouchCancel);
             
             window.addEventListener("resize", function() {
-                console.log('how to preserve center? this callback just resets everything to center...');
-                setDimensionsAndPosition();
+                const viewportCenterX = viewportWidth / 2;
+                const viewportCenterY = viewportHeight / 2;
+                const currentCenterX = (viewportCenterX - currentOffsetX) / currentWidth * 100;
+                const currentCenterY = (viewportCenterY - currentOffsetY) / currentHeight * 100;
+                setDimensionsAndPosition([ currentCenterX, currentCenterY ], 1);
             });
         })
 
@@ -185,7 +213,7 @@
         }
 
         const onTouchMove = (e) => {
-            e.preventDefault(); // touch move event does other weird things in mobile browser
+            e.preventDefault(); // touch move event has other side effects in mobile browser
             touchMoving = true;
 
             if (panning && touchInBounds(e.touches[0])) {
